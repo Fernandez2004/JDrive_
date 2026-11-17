@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>JDrive — Personal Cloud</title>
+  <meta name="description" content="JDrive is a polished, local-first personal cloud demo with uploads, downloads, favorites, share links and version history.">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: { extend: { fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui', 'Segoe UI', 'sans-serif'] } } }
+    };
+    (function () {
+      try {
+        var s = JSON.parse(localStorage.getItem('jdrive.settings.v2') || '{}');
+        var theme = s.theme || 'system';
+        var dark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        if (dark) document.documentElement.classList.add('dark');
+      } catch (e) {}
+    })();
+  </script>
+
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style type="text/tailwindcss">
+    @layer components {
+      .card { @apply rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900; }
+      .btn-primary { @apply inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 dark:focus-visible:ring-offset-slate-950; }
+      .btn-secondary { @apply inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700; }
+      .btn-ghost { @apply inline-flex h-10 items-center justify-center gap-2 rounded-xl px-3 text-sm font-semibold text-slate-600 transition hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800; }
+      .btn-danger { @apply inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-rose-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-rose-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-500; }
+      .icon-btn { @apply inline-flex h-9 w-9 items-center justify-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white; }
+      .input { @apply w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/20 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100; }
+      .label { @apply mb-1.5 block text-sm font-medium text-slate-700 dark:text-slate-300; }
+      .nav-item { @apply flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-400 transition hover:bg-slate-800/60 hover:text-white; }
+      .nav-item.active { @apply bg-indigo-500/15 text-indigo-300; }
+      .nav-badge { @apply ml-auto rounded-full bg-slate-800 px-1.5 py-0.5 text-[10px] font-bold text-slate-300; }
+      .kbd { @apply rounded-md border border-slate-200 bg-white px-1.5 py-0.5 text-[10px] font-semibold text-slate-500 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-400; }
+      .chip { @apply inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 dark:bg-slate-800 dark:text-slate-300; }
+      .toggle { @apply relative inline-flex h-6 w-11 shrink-0 items-center rounded-full bg-slate-300 transition-colors dark:bg-slate-700; }
+      .toggle.on { @apply bg-indigo-600 dark:bg-indigo-500; }
+      .toggle-knob { @apply inline-block h-4 w-4 translate-x-1 rounded-full bg-white shadow transition-transform; }
+      .toggle.on .toggle-knob { @apply translate-x-6; }
+      .field-row { @apply flex items-center justify-between gap-4 border-b border-slate-100 py-4 last:border-0 dark:border-slate-800; }
+    }
+  </style>
+
+  <style>
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 8px; }
+    .dark ::-webkit-scrollbar-thumb { background: #334155; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+    .module { display: none; }
+    .module.active { display: block; animation: moduleIn .22s ease-out; }
+    @keyframes moduleIn { from { transform: translateY(6px); } to { transform: none; } }
+
+    .toast-in { animation: toastIn .25s ease-out; }
+    @keyframes toastIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+    .toast-out { opacity: 0; transform: translateY(8px) scale(.97); transition: all .25s ease-in; }
+
+    .modal-panel { animation: moduleIn .2s ease-out; }
+    .drop-active { border-color: #6366f1 !important; background: rgba(99, 102, 241, .06) !important; }
+
+    /* Keep secondary text readable in light mode without touching the dark sidebar. */
+    html:not(.dark) :is(#scroll-area, #modal-panel, #notifications-popover, #search-overlay) .text-slate-400 { color: #64748b; }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+    }
+  </style>
+</head>
+
+<body class="h-screen overflow-hidden bg-slate-50 font-sans text-slate-800 antialiased transition-colors duration-200 dark:bg-slate-950 dark:text-slate-200">
+
+  <div class="flex h-full w-full">
+
+    <!-- Mobile overlay -->
+    <div id="mobile-overlay" data-action="close-sidebar" class="fixed inset-0 z-40 hidden bg-slate-950/60 backdrop-blur-sm md:hidden"></div>
+
+    <!-- Sidebar -->
+    <aside id="sidebar" class="fixed inset-y-0 left-0 z-50 flex w-72 -translate-x-full flex-col border-r border-slate-800/70 bg-slate-950 text-slate-300 shadow-2xl transition-transform duration-300 md:relative md:translate-x-0 md:shadow-none">
+      <div class="shrink-0 border-b border-slate-800/70 p-5">
+        <div class="flex items-center gap-3">
+          <div class="rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 p-2.5 text-white shadow-lg shadow-indigo-900/40">
+            <i data-lucide="cloud" class="h-5 w-5"></i>
+          </div>
+          <div>
+            <p class="text-xl font-bold tracking-tight text-white">JDrive</p>
+            <p class="text-[10px] font-bold uppercase tracking-[0.18em] text-indigo-400">Local-first cloud</p>
+          </div>
+        </div>
+      </div>
+
+      <nav class="flex-1 space-y-0.5 overflow-y-auto px-3 py-4">
+        <p class="px-3 pb-2 pt-1 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Overview</p>
+        <button class="nav-item active" data-nav="dashboard"><i data-lucide="layout-dashboard" class="h-5 w-5"></i><span>Dashboard</span></button>
+        <button class="nav-item" data-nav="my-files"><i data-lucide="folder" class="h-5 w-5"></i><span>My Files</span><span id="badge-files" class="nav-badge hidden">0</span></button>
+        <button class="nav-item" data-nav="recent"><i data-lucide="clock" class="h-5 w-5"></i><span>Recent Files</span></button>
+        <button class="nav-item" data-nav="favorites"><i data-lucide="star" class="h-5 w-5"></i><span>Favorites</span><span id="badge-favorites" class="nav-badge hidden">0</span></button>
+
+        <p class="px-3 pb-2 pt-5 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Workspace</p>
+        <button class="nav-item" data-nav="library"><i data-lucide="library" class="h-5 w-5"></i><span>Shared Library</span><span id="badge-library" class="nav-badge hidden">0</span></button>
+        <button class="nav-item" data-nav="shared"><i data-lucide="link" class="h-5 w-5"></i><span>My Share Links</span><span id="badge-shared" class="nav-badge hidden">0</span></button>
+        <button class="nav-item" data-nav="downloads"><i data-lucide="download-cloud" class="h-5 w-5"></i><span>Downloads</span></button>
+        <button class="nav-item" data-nav="upload"><i data-lucide="upload" class="h-5 w-5"></i><span>Upload Files</span></button>
+
+        <p class="px-3 pb-2 pt-5 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">System</p>
+        <button class="nav-item" data-nav="versions"><i data-lucide="history" class="h-5 w-5"></i><span>Version History</span></button>
+        <button class="nav-item" data-nav="recycle"><i data-lucide="trash-2" class="h-5 w-5"></i><span>Recycle Bin</span><span id="badge-recycle" class="nav-badge hidden">0</span></button>
+        <button class="nav-item" data-nav="notifications"><i data-lucide="bell" class="h-5 w-5"></i><span>Notifications</span><span id="badge-notifications" class="nav-badge hidden">0</span></button>
+
+        <p class="px-3 pb-2 pt-5 text-[10px] font-bold uppercase tracking-[0.18em] text-slate-400">Configuration</p>
+        <button class="nav-item" data-nav="security"><i data-lucide="shield" class="h-5 w-5"></i><span>Security</span></button>
+        <button class="nav-item" data-nav="settings"><i data-lucide="settings" class="h-5 w-5"></i><span>Settings</span></button>
+      </nav>
+
+      <div class="shrink-0 space-y-1 border-t border-slate-800/70 p-4">
+        <div class="mb-2 rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+          <div class="flex items-center gap-2 text-xs font-semibold text-slate-300">
+            <i data-lucide="hard-drive" class="h-4 w-4 text-indigo-400"></i> Local vault
+          </div>
+          <p class="mt-2 text-xs text-slate-400"><span id="sidebar-used" class="font-semibold text-slate-100">0 B</span> stored</p>
+          <p id="sidebar-items" class="text-[11px] text-slate-400">0 items · browser only</p>
+        </div>
+        <button data-action="toggle-theme" class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-400 transition hover:bg-slate-800/60 hover:text-white">
+          <i data-lucide="moon" class="h-5 w-5 dark:hidden"></i>
+          <i data-lucide="sun" class="hidden h-5 w-5 dark:block"></i>
+          <span class="dark:hidden">Dark mode</span>
+          <span class="hidden dark:inline">Light mode</span>
+        </button>
+        <button data-action="logout" class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-slate-400 transition hover:bg-rose-500/10 hover:text-rose-400">
+          <i data-lucide="log-out" class="h-5 w-5"></i><span>Log out</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main -->
+    <div class="relative flex min-w-0 flex-1 flex-col">
+      <header class="relative z-30 flex h-16 shrink-0 items-center gap-2 border-b border-slate-200/80 bg-white/80 px-4 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-900/70 md:px-6">
+        <button data-action="toggle-sidebar" class="icon-btn md:hidden" aria-label="Open navigation"><i data-lucide="menu" class="h-5 w-5"></i></button>
+        <div class="flex items-center gap-2 md:hidden">
+          <div class="rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 p-1.5 text-white"><i data-lucide="cloud" class="h-4 w-4"></i></div>
+          <span class="font-bold text-slate-900 dark:text-white">JDrive</span>
+        </div>
+
+        <button data-action="open-search" class="hidden h-10 w-full max-w-xs items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm text-slate-500 transition dark:text-slate-400 hover:border-slate-300 md:flex dark:border-slate-700 dark:bg-slate-800/60 dark:hover:border-slate-600">
+          <i data-lucide="search" class="h-4 w-4"></i>
+          <span>Search your files</span>
+          <span class="kbd ml-auto">Ctrl K</span>
+        </button>
+
+        <div class="ml-auto flex items-center gap-1.5 sm:gap-2">
+          <button data-action="open-search" class="icon-btn md:hidden" aria-label="Search"><i data-lucide="search" class="h-5 w-5"></i></button>
+          <button class="btn-primary h-10 px-3 sm:px-4" data-nav="upload">
+            <i data-lucide="upload" class="h-4 w-4"></i><span class="hidden sm:inline">Upload</span>
+          </button>
+          <button class="icon-btn relative" data-action="toggle-notifications" aria-label="Notifications">
+            <i data-lucide="bell" class="h-5 w-5"></i>
+            <span id="bell-dot" class="absolute right-2 top-2 hidden h-2 w-2 rounded-full bg-rose-500 ring-2 ring-white dark:ring-slate-900"></span>
+          </button>
+          <button id="user-menu-button" data-action="toggle-user-menu" aria-label="Account menu" class="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 text-xs font-bold text-white shadow-sm ring-2 ring-white transition hover:brightness-110 dark:ring-slate-900">
+            <span id="user-avatar">AM</span>
+          </button>
+        </div>
+      </header>
+
+      <main id="scroll-area" class="flex-1 overflow-y-auto">
+        <div class="mx-auto w-full max-w-7xl p-4 md:p-8">
+
+          <!-- DASHBOARD -->
+          <section id="module-dashboard" class="module active space-y-6 md:space-y-8">
+            <div class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <p id="dash-greeting" class="text-[11px] font-bold uppercase tracking-[0.18em] text-indigo-600 dark:text-indigo-400">Hello</p>
+                <h1 class="mt-1 text-2xl font-bold tracking-tight text-slate-900 dark:text-white md:text-3xl">Your cloud, at a glance</h1>
+                <p id="dash-date" class="mt-1 text-sm text-slate-500 dark:text-slate-400"></p>
+              </div>
+              <div class="flex gap-2">
+                <button class="btn-secondary" data-action="new-note"><i data-lucide="pen-line" class="h-4 w-4"></i><span class="hidden sm:inline">New note</span></button>
+                <button class="btn-primary" data-nav="upload"><i data-lucide="upload" class="h-4 w-4"></i>Upload files</button>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+              <button data-nav="my-files" class="card flex items-center gap-3 p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md sm:p-5">
+                <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400"><i data-lucide="files" class="h-5 w-5"></i></span>
+                <span class="min-w-0"><span id="stat-items" class="block text-2xl font-bold leading-tight text-slate-900 dark:text-white">0</span><span class="block truncate text-xs font-medium text-slate-500 dark:text-slate-400">Total items</span></span>
+              </button>
+              <button data-nav="favorites" class="card flex items-center gap-3 p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md sm:p-5">
+                <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400"><i data-lucide="star" class="h-5 w-5"></i></span>
+                <span class="min-w-0"><span id="stat-favorites" class="block text-2xl font-bold leading-tight text-slate-900 dark:text-white">0</span><span class="block truncate text-xs font-medium text-slate-500 dark:text-slate-400">Favorites</span></span>
+              </button>
+              <button data-nav="library" class="card flex items-center gap-3 p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md sm:p-5">
+                <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400"><i data-lucide="library" class="h-5 w-5"></i></span>
+                <span class="min-w-0"><span id="stat-library" class="block text-2xl font-bold leading-tight text-slate-900 dark:text-white">0</span><span class="block truncate text-xs font-medium text-slate-500 dark:text-slate-400">Library files</span></span>
+              </button>
+              <button data-nav="recycle" class="card flex items-center gap-3 p-4 text-left transition hover:-translate-y-0.5 hover:shadow-md sm:p-5">
+                <span class="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-600 dark:bg-rose-500/10 dark:text-rose-400"><i data-lucide="trash-2" class="h-5 w-5"></i></span>
+                <span class="min-w-0"><span id="stat-trash" class="block text-2xl font-bold leading-tight text-slate-900 dark:text-white">0</span><span class="block truncate text-xs font-medium text-slate-500 dark:text-slate-400">In recycle bin</span></span>
+              </button>
+            </div>
+
+            <div class="grid gap-6 xl:grid-cols-3">
+              <section class="card flex flex-col p-5 sm:p-6 xl:col-span-2">
+                <div class="flex items-start justify-between gap-3">
+                  <div>
+                    <h2 class="font-bold text-slate-900 dark:text-white">Storage</h2>
+                    <p class="mt-0.5 text-sm text-slate-500 dark:text-slate-400">Everything is saved locally in your browser.</p>
+                  </div>
+                  <span class="chip"><i data-lucide="shield-check" class="h-3.5 w-3.5"></i>Private</span>
+                </div>
+                <div id="storage-content" class="mt-6 flex flex-1 flex-col justify-center"></div>
+                <div class="mt-6 flex items-center justify-between gap-3 border-t border-slate-100 pt-4 dark:border-slate-800">
+                  <p class="text-xs text-slate-500 dark:text-slate-400"><i data-lucide="hard-drive" class="mr-1 inline h-3.5 w-3.5"></i>IndexedDB · local only</p>
+                  <button data-nav="my-files" class="inline-flex items-center gap-1 text-xs font-semibold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400"><span>Manage files</span><i data-lucide="arrow-right" class="h-3.5 w-3.5"></i></button>
+                </div>
+              </section>
+
+              <section class="card p-5 sm:p-6">
+                <h2 class="font-bold text-slate-900 dark:text-white">Quick actions</h2>
+                <p class="mt-0.5 text-sm text-slate-500 dark:text-slate-400">Jump straight in.</p>
+                <div class="mt-4 grid gap-2.5">
+                  <button data-action="pick-file" class="flex items-center gap-3 rounded-xl border border-slate-200 p-3 text-left transition hover:border-indigo-300 hover:bg-indigo-50/50 dark:border-slate-800 dark:hover:border-indigo-500/40 dark:hover:bg-indigo-500/5">
+                    <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400"><i data-lucide="file-up" class="h-4 w-4"></i></span>
+                    <span><span class="block text-sm font-semibold text-slate-900 dark:text-white">Upload a file</span><span class="block text-xs text-slate-500 dark:text-slate-400">Images, docs, anything</span></span>
+                  </button>
+                  <button data-action="pick-folder" class="flex items-center gap-3 rounded-xl border border-slate-200 p-3 text-left transition hover:border-indigo-300 hover:bg-indigo-50/50 dark:border-slate-800 dark:hover:border-indigo-500/40 dark:hover:bg-indigo-500/5">
+                    <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400"><i data-lucide="folder-up" class="h-4 w-4"></i></span>
+                    <span><span class="block text-sm font-semibold text-slate-900 dark:text-white">Upload a folder</span><span class="block text-xs text-slate-500 dark:text-slate-400">Downloads back as .zip</span></span>
+                  </button>
+                  <button data-action="new-note" class="flex items-center gap-3 rounded-xl border border-slate-200 p-3 text-left transition hover:border-indigo-300 hover:bg-indigo-50/50 dark:border-slate-800 dark:hover:border-indigo-500/40 dark:hover:bg-indigo-500/5">
+                    <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400"><i data-lucide="pen-line" class="h-4 w-4"></i></span>
+                    <span><span class="block text-sm font-semibold text-slate-900 dark:text-white">Write a note</span><span class="block text-xs text-slate-500 dark:text-slate-400">Saved as a text file</span></span>
+                  </button>
+                  <button data-nav="recycle" class="flex items-center gap-3 rounded-xl border border-slate-200 p-3 text-left transition hover:border-indigo-300 hover:bg-indigo-50/50 dark:border-slate-800 dark:hover:border-indigo-500/40 dark:hover:bg-indigo-500/5">
+                    <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"><i data-lucide="trash-2" class="h-4 w-4"></i></span>
+                    <span><span class="block text-sm font-semibold text-slate-900 dark:text-white">Recycle bin</span><span class="block text-xs text-slate-500 dark:text-slate-400">Restore deleted items</span></span>
+                  </button>
+                </div>
+              </section>
+            </div>
+
+            <div class="grid gap-6 xl:grid-cols-3">
+              <section class="card xl:col-span-2">
+                <div class="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+                  <h2 class="font-bold text-slate-900 dark:text-white">Recent files</h2>
+                  <button class="text-xs font-semibold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400" data-nav="recent">View all</button>
+                </div>
+                <div id="dash-recent" class="p-2"></div>
+              </section>
+              <section class="card">
+                <div class="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+                  <h2 class="font-bold text-slate-900 dark:text-white">Activity</h2>
+                  <button class="text-xs font-semibold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400" data-nav="versions">History</button>
+                </div>
+                <div id="dash-activity" class="p-2"></div>
+              </section>
+            </div>
+          </section>
+
+          <!-- MY FILES -->
+          <section id="module-my-files" class="module space-y-5">
+            <div class="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+              <div>
+                <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white md:text-3xl">My Files</h1>
+                <p id="files-subtitle" class="mt-1 text-sm text-slate-500 dark:text-slate-400">Your uploads, organized.</p>
+              </div>
+              <div class="flex gap-2">
+                <button class="btn-secondary" data-action="new-note"><i data-lucide="pen-line" class="h-4 w-4"></i><span>New note</span></button>
+                <button class="btn-primary" data-nav="upload"><i data-lucide="upload" class="h-4 w-4"></i>Upload</button>
+              </div>
+            </div>
+
+            <div class="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div class="relative flex-1">
+                <i data-lucide="search" class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400"></i>
+                <input id="files-search" type="search" placeholder="Search by name or folder contents..." class="input pl-9">
+              </div>
+              <div class="flex items-center gap-2">
+                <select id="files-sort" aria-label="Sort files" class="input w-auto cursor-pointer py-2.5 pr-8 text-sm">
+                  <option value="updated">Last modified</option>
+                  <option value="oldest">Oldest first</option>
+                  <option value="name">Name A–Z</option>
+                  <option value="size">Largest first</option>
+                </select>
+                <div class="inline-flex rounded-xl border border-slate-200 bg-white p-1 dark:border-slate-700 dark:bg-slate-800">
+                  <button data-view="list" class="view-btn rounded-lg p-1.5 text-slate-500 transition hover:text-slate-900 dark:text-slate-400 dark:hover:text-white" aria-label="List view"><i data-lucide="list" class="h-4 w-4"></i></button>
+                  <button data-view="grid" class="view-btn rounded-lg p-1.5 text-slate-500 transition hover:text-slate-900 dark:text-slate-400 dark:hover:text-white" aria-label="Grid view"><i data-lucide="layout-grid" class="h-4 w-4"></i></button>
+                </div>
+              </div>
+            </div>
+
+            <div id="files-view"></div>
+          </section>
+
+          <!-- RECENT -->
+          <section id="module-recent" class="module space-y-5">
+            <div>
+              <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white md:text-3xl">Recent Files</h1>
+              <p id="recent-subtitle" class="mt-1 text-sm text-slate-500 dark:text-slate-400">Your latest changes across the vault.</p>
+            </div>
+            <div id="recent-content"></div>
+          </section>
+
+          <!-- FAVORITES -->
+          <section id="module-favorites" class="module space-y-5">
+            <div>
+              <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white md:text-3xl">Favorites</h1>
+              <p id="favorites-subtitle" class="mt-1 text-sm text-slate-500 dark:text-slate-400">The files you want within reach.</p>
+            </div>
+            <div id="favorites-content"></div>
+          </section>
+
+          <!-- SHARED LIBRARY -->
+          <section id="module-library" class="module space-y-5">
+            <div class="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white md:text-3xl">Shared Library</h1>
+                <p id="library-subtitle" class="mt-1 text-sm text-slate-500 dark:text-slate-400">Password-protected files published by the owner.</p>
+              </div>
+              <div class="flex gap-2">
+                <button data-action="library-refresh" class="btn-secondary"><i data-lucide="refresh-cw" class="h-4 w-4"></i>Refresh</button>
+                <button id="library-lock" data-action="library-lock" class="btn-ghost hidden"><i data-lucide="lock" class="h-4 w-4"></i>Lock</button>
+              </div>
+            </div>
+            <div id="library-content"></div>
+          </section>
+
+          <!-- SHARED -->
+          <section id="module-shared" class="module space-y-5">
+            <div>
+              <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white md:text-3xl">My Share Links</h1>
+              <p id="shared-subtitle" class="mt-1 text-sm text-slate-500 dark:text-slate-400">Local demo links generated on this device.</p>
+            </div>
+            <div id="shared-content"></div>
+          </section>
+
+          <!-- DOWNLOADS -->
+          <section id="module-downloads" class="module space-y-5">
+            <div class="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white md:text-3xl">Downloads</h1>
+                <p id="downloads-subtitle" class="mt-1 text-sm text-slate-500 dark:text-slate-400">Everything you have downloaded from JDrive.</p>
+              </div>
+              <button id="downloads-clear" data-action="clear-downloads" class="btn-ghost text-rose-600 hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-500/10"><i data-lucide="eraser" class="h-4 w-4"></i>Clear history</button>
+            </div>
+            <div id="downloads-content"></div>
+          </section>
+
+          <!-- UPLOAD -->
+          <section id="module-upload" class="module space-y-5">
+            <div>
+              <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white md:text-3xl">Upload Files</h1>
+              <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Add files to your vault. Uploading the same name saves a new version.</p>
+            </div>
+
+            <div id="drop-zone" class="card p-5 transition sm:p-7">
+              <input type="file" id="file-input" class="hidden" multiple>
+              <input type="file" id="folder-input" class="hidden" webkitdirectory directory multiple>
+
+              <div class="grid gap-4 md:grid-cols-2">
+                <button data-action="pick-file" class="group rounded-2xl border-2 border-dashed border-slate-200 p-7 text-center transition hover:border-indigo-400 hover:bg-indigo-50/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-slate-700 dark:hover:border-indigo-500/60 dark:hover:bg-indigo-500/5">
+                  <span class="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-600 transition group-hover:scale-105 dark:bg-indigo-500/10 dark:text-indigo-400"><i data-lucide="file-up" class="h-7 w-7"></i></span>
+                  <span class="mt-4 block font-bold text-slate-900 dark:text-white">Choose files</span>
+                  <span class="mt-1 block text-sm text-slate-500 dark:text-slate-400">Select one or many files</span>
+                </button>
+                <button data-action="pick-folder" class="group rounded-2xl border-2 border-dashed border-slate-200 p-7 text-center transition hover:border-indigo-400 hover:bg-indigo-50/50 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 dark:border-slate-700 dark:hover:border-indigo-500/60 dark:hover:bg-indigo-500/5">
+                  <span class="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50 text-amber-600 transition group-hover:scale-105 dark:bg-amber-500/10 dark:text-amber-400"><i data-lucide="folder-up" class="h-7 w-7"></i></span>
+                  <span class="mt-4 block font-bold text-slate-900 dark:text-white">Choose a folder</span>
+                  <span class="mt-1 block text-sm text-slate-500 dark:text-slate-400">Stored as a folder · .zip export</span>
+                </button>
+              </div>
+
+              <div class="mt-5 rounded-xl border border-dashed border-slate-200 px-4 py-4 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
+                <i data-lucide="mouse-pointer-2" class="mr-1.5 inline h-4 w-4"></i>
+                You can also drag &amp; drop files or folders anywhere on this card.
+              </div>
+
+              <div id="upload-queue-wrap" class="mt-6 hidden space-y-3">
+                <div class="flex items-end justify-between gap-3">
+                  <h2 class="text-sm font-bold text-slate-900 dark:text-white">Upload queue</h2>
+                  <span id="upload-summary" class="text-xs text-slate-500 dark:text-slate-400"></span>
+                </div>
+                <div id="upload-queue" class="space-y-3"></div>
+              </div>
+            </div>
+
+            <div class="card flex items-start gap-3 p-4 text-sm text-slate-600 dark:text-slate-300">
+              <span class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400"><i data-lucide="info" class="h-4 w-4"></i></span>
+              <p>JDrive saves everything to IndexedDB in this browser — no server, no account. Re-upload a file with the same name to create a restorable version. <span class="font-medium text-slate-800 dark:text-slate-200">Demo files are included on first launch.</span></p>
+            </div>
+          </section>
+
+          <!-- VERSIONS -->
+          <section id="module-versions" class="module space-y-5">
+            <div>
+              <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white md:text-3xl">Version History</h1>
+              <p id="versions-subtitle" class="mt-1 text-sm text-slate-500 dark:text-slate-400">A timeline of uploads, versions, renames and restores.</p>
+            </div>
+            <div id="versions-content"></div>
+          </section>
+
+          <!-- RECYCLE -->
+          <section id="module-recycle" class="module space-y-5">
+            <div class="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white md:text-3xl">Recycle Bin</h1>
+                <p id="recycle-subtitle" class="mt-1 text-sm text-slate-500 dark:text-slate-400">Deleted items stay here until you empty the bin.</p>
+              </div>
+              <button id="recycle-empty" data-action="empty-trash" class="btn-secondary text-rose-600 dark:text-rose-400"><i data-lucide="trash-2" class="h-4 w-4"></i>Empty bin</button>
+            </div>
+            <div id="recycle-content"></div>
+          </section>
+
+          <!-- NOTIFICATIONS -->
+          <section id="module-notifications" class="module space-y-5">
+            <div class="flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white md:text-3xl">Notifications</h1>
+                <p id="notifications-subtitle" class="mt-1 text-sm text-slate-500 dark:text-slate-400">Updates from your vault.</p>
+              </div>
+              <div class="flex gap-2">
+                <button data-action="mark-all-read" class="btn-secondary"><i data-lucide="check-check" class="h-4 w-4"></i>Mark all read</button>
+                <button data-action="clear-notifications" class="btn-ghost text-rose-700 dark:text-rose-400"><i data-lucide="eraser" class="h-4 w-4"></i>Clear</button>
+              </div>
+            </div>
+            <div id="notifications-content"></div>
+          </section>
+
+          <!-- SECURITY -->
+          <section id="module-security" class="module space-y-5">
+            <div>
+              <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white md:text-3xl">Security</h1>
+              <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Manage your master password and account protection.</p>
+            </div>
+
+            <div class="grid gap-6 lg:grid-cols-3">
+              <div class="card lg:col-span-2">
+                <div class="flex items-center gap-3 border-b border-slate-100 px-5 py-4 dark:border-slate-800">
+                  <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-400"><i data-lucide="key-round" class="h-4 w-4"></i></span>
+                  <div>
+                    <h2 class="font-bold text-slate-900 dark:text-white">Master password</h2>
+                    <p id="last-password" class="text-xs text-slate-500 dark:text-slate-400">No password set yet.</p>
+                  </div>
+                </div>
+                <form id="password-form" class="space-y-4 p-5">
+                  <div id="current-wrap" class="hidden">
+                    <label class="label" for="current-password">Current password</label>
+                    <div class="relative">
+                      <input id="current-password" type="password" class="input pr-11" autocomplete="current-password" placeholder="Enter current password">
+                      <button type="button" data-action="toggle-pw" data-target="current-password" class="icon-btn absolute right-1 top-1/2 -translate-y-1/2" aria-label="Show password"><i data-lucide="eye" class="h-4 w-4"></i></button>
+                    </div>
+                  </div>
+                  <div>
+                    <label class="label" for="new-password">New password</label>
+                    <div class="relative">
+                      <input id="new-password" type="password" class="input pr-11" autocomplete="new-password" placeholder="At least 8 characters">
+                      <button type="button" data-action="toggle-pw" data-target="new-password" class="icon-btn absolute right-1 top-1/2 -translate-y-1/2" aria-label="Show password"><i data-lucide="eye" class="h-4 w-4"></i></button>
+                    </div>
+                    <div class="mt-2 flex items-center gap-3">
+                      <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"><div id="pw-strength-bar" class="h-full w-0 rounded-full bg-rose-500 transition-all"></div></div>
+                      <span id="pw-strength-label" class="w-16 text-right text-[11px] font-medium text-slate-500 dark:text-slate-400">Weak</span>
+                    </div>
+                  </div>
+                  <div>
+                    <label class="label" for="confirm-password">Confirm new password</label>
+                    <input id="confirm-password" type="password" class="input" autocomplete="new-password" placeholder="Repeat new password">
+                  </div>
+                  <p id="password-error" class="hidden rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700 dark:bg-rose-500/10 dark:text-rose-400"></p>
+                  <div class="flex justify-end pt-1">
+                    <button type="submit" class="btn-primary"><i data-lucide="shield-check" class="h-4 w-4"></i>Update password</button>
+                  </div>
+                </form>
+              </div>
+
+              <div class="space-y-6">
+                <div class="card p-5">
+                  <div class="flex items-center justify-between gap-3">
+                    <div>
+                      <h2 class="font-bold text-slate-900 dark:text-white">Two-step lock</h2>
+                      <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Show the lock screen after this tab has been inactive.</p>
+                    </div>
+                    <button data-action="toggle-2fa" class="toggle" aria-label="Toggle two-step lock"><span class="toggle-knob"></span></button>
+                  </div>
+                </div>
+                <div class="card p-5">
+                  <h2 class="font-bold text-slate-900 dark:text-white">Active session</h2>
+                  <div class="mt-3 flex items-center gap-3 rounded-xl border border-slate-200 p-3 dark:border-slate-800">
+                    <span class="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400"><i data-lucide="monitor" class="h-4 w-4"></i></span>
+                    <div class="min-w-0 flex-1">
+                      <p class="truncate text-sm font-semibold text-slate-900 dark:text-white">This browser</p>
+                      <p class="text-xs text-slate-500 dark:text-slate-400">Current session · local demo</p>
+                    </div>
+                    <span class="chip">Active</span>
+                  </div>
+                  <p class="mt-3 text-xs text-slate-500 dark:text-slate-400"><i data-lucide="info" class="mr-1 inline h-3.5 w-3.5"></i>Passwords are hashed and stored only in this browser. This is a demo, not a real account.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- SETTINGS -->
+          <section id="module-settings" class="module space-y-5">
+            <div>
+              <h1 class="text-2xl font-bold tracking-tight text-slate-900 dark:text-white md:text-3xl">Settings</h1>
+              <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Profile, appearance and behavior.</p>
+            </div>
+
+            <div class="grid gap-6 lg:grid-cols-3">
+              <div class="space-y-6 lg:col-span-2">
+                <div class="card p-5 sm:p-6">
+                  <h2 class="font-bold text-slate-900 dark:text-white">Profile</h2>
+                  <p class="mt-1 text-sm text-slate-500 dark:text-slate-400">Shown across the app.</p>
+                  <form id="profile-form" class="mt-5 grid gap-4 sm:grid-cols-2">
+                    <div>
+                      <label class="label" for="display-name">Display name</label>
+                      <input id="display-name" class="input" maxlength="40" placeholder="Your name">
+                    </div>
+                    <div>
+                      <label class="label" for="profile-email">Email</label>
+                      <input id="profile-email" class="input" type="email" maxlength="80" placeholder="you@example.com">
+                    </div>
+                    <div class="sm:col-span-2 flex justify-end">
+                      <button type="submit" class="btn-primary"><i data-lucide="check" class="h-4 w-4"></i>Save profile</button>
+                    </div>
+                  </form>
+                </div>
+
+                <div class="card p-5 sm:p-6">
+                  <h2 class="font-bold text-slate-900 dark:text-white">Preferences</h2>
+                  <div class="mt-2">
+                    <div class="field-row">
+                      <div><h3 class="text-sm font-semibold text-slate-900 dark:text-white">Email notifications</h3><p class="text-xs text-slate-500 dark:text-slate-400">Receive a summary of vault activity</p></div>
+                      <button data-setting="emailAlerts" class="toggle" aria-label="Toggle email notifications"><span class="toggle-knob"></span></button>
+                    </div>
+                    <div class="field-row">
+                      <div><h3 class="text-sm font-semibold text-slate-900 dark:text-white">Confirm before deleting</h3><p class="text-xs text-slate-500 dark:text-slate-400">Ask before moving files to the recycle bin</p></div>
+                      <button data-setting="confirmDelete" class="toggle" aria-label="Toggle delete confirmation"><span class="toggle-knob"></span></button>
+                    </div>
+                    <div class="field-row">
+                      <div><h3 class="text-sm font-semibold text-slate-900 dark:text-white">Compress folder exports</h3><p class="text-xs text-slate-500 dark:text-slate-400">Use maximum compression when zipping folders</p></div>
+                      <button data-setting="autoCompress" class="toggle" aria-label="Toggle compression"><span class="toggle-knob"></span></button>
+                    </div>
+                    <div class="field-row">
+                      <div><h3 class="text-sm font-semibold text-slate-900 dark:text-white">Default file layout</h3><p class="text-xs text-slate-500 dark:text-slate-400">How My Files opens</p></div>
+                      <select id="default-view" aria-label="Default file layout" class="input w-auto py-2 pr-8 text-sm">
+                        <option value="list">List</option>
+                        <option value="grid">Grid</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="space-y-6">
+                <div class="card p-5">
+                  <h2 class="font-bold text-slate-900 dark:text-white">Appearance</h2>
+                  <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Choose a theme.</p>
+                  <div class="mt-4 grid grid-cols-3 gap-2 rounded-xl bg-slate-100 p-1 dark:bg-slate-800">
+                    <button data-theme-choice="light" class="theme-choice rounded-lg px-2 py-2 text-xs font-semibold text-slate-500 transition hover:text-slate-900 dark:text-slate-400">Light</button>
+                    <button data-theme-choice="dark" class="theme-choice rounded-lg px-2 py-2 text-xs font-semibold text-slate-500 transition hover:text-slate-900 dark:text-slate-400">Dark</button>
+                    <button data-theme-choice="system" class="theme-choice rounded-lg px-2 py-2 text-xs font-semibold text-slate-500 transition hover:text-slate-900 dark:text-slate-400">System</button>
+                  </div>
+                </div>
+                <div class="card p-5">
+                  <h2 class="font-bold text-slate-900 dark:text-white">Local storage</h2>
+                  <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Your files live in this browser only.</p>
+                  <div class="mt-4 space-y-2 rounded-xl bg-slate-50 p-3 text-xs text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">
+                    <div class="flex justify-between"><span>Used</span><span id="settings-used" class="font-semibold">0 B</span></div>
+                    <div class="flex justify-between"><span>Items</span><span id="settings-items" class="font-semibold">0</span></div>
+                    <div class="flex justify-between"><span>Recycle bin</span><span id="settings-trash" class="font-semibold">0</span></div>
+                  </div>
+                  <button data-action="reset-demo" class="mt-4 flex w-full items-center justify-center gap-2 rounded-xl border border-rose-200 px-3 py-2.5 text-sm font-semibold text-rose-600 transition hover:bg-rose-50 dark:border-rose-500/30 dark:text-rose-400 dark:hover:bg-rose-500/10"><i data-lucide="rotate-ccw" class="h-4 w-4"></i>Reset demo data</button>
+                  <p class="mt-3 text-[11px] leading-relaxed text-slate-400 dark:text-slate-500">JDrive v2.0 · Enhanced demo · Your vault stays in this browser unless you publish an encrypted library.</p>
+                </div>
+                <div class="card p-5">
+                  <h2 class="font-bold text-slate-900 dark:text-white">Shared library</h2>
+                  <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Publish password-protected downloads for visitors.</p>
+                  <div id="settings-library-info" class="mt-4 rounded-xl bg-slate-50 p-3 text-xs text-slate-600 dark:bg-slate-800/60 dark:text-slate-300">Checking library…</div>
+                  <button data-action="publish-library" class="btn-secondary mt-4 w-full"><i data-lucide="library" class="h-4 w-4"></i>Publish shared library</button>
+                  <p class="mt-3 text-[11px] leading-relaxed text-slate-400 dark:text-slate-500">Visitors need the library password to download. Only someone with repository access can replace the published library. Files are encrypted with AES-256-GCM.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Popovers -->
+  <div id="notifications-popover" data-popover class="fixed right-3 top-[68px] z-[60] hidden w-[min(92vw,22rem)] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-900">
+    <div class="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-3 dark:border-slate-800">
+      <h2 class="text-sm font-bold text-slate-900 dark:text-white">Notifications</h2>
+      <button data-action="mark-all-read" class="text-xs font-semibold text-indigo-600 hover:text-indigo-500 dark:text-indigo-400">Mark read</button>
+    </div>
+    <div id="notifications-popover-list" class="max-h-80 overflow-y-auto p-1.5"></div>
+    <button data-nav="notifications" class="block w-full border-t border-slate-100 px-4 py-3 text-center text-xs font-semibold text-indigo-600 hover:bg-slate-50 dark:border-slate-800 dark:text-indigo-400 dark:hover:bg-slate-800/60">View all notifications</button>
+  </div>
+
+  <div id="user-popover" data-popover class="fixed right-3 top-[68px] z-[60] hidden w-72 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl dark:border-slate-800 dark:bg-slate-900">
+    <div class="border-b border-slate-100 p-4 dark:border-slate-800">
+      <p id="popover-name" class="truncate text-sm font-bold text-slate-900 dark:text-white">Alex Morgan</p>
+      <p id="popover-email" class="truncate text-xs text-slate-500 dark:text-slate-400">alex@example.com</p>
+    </div>
+    <div class="p-1.5">
+      <button data-nav="settings" class="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800"><i data-lucide="settings" class="h-4 w-4"></i>Settings</button>
+      <button data-nav="security" class="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-600 transition hover:bg-slate-50 dark:text-slate-300 dark:hover:bg-slate-800"><i data-lucide="shield" class="h-4 w-4"></i>Security</button>
+      <button data-action="logout" class="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-rose-600 transition hover:bg-rose-50 dark:text-rose-400 dark:hover:bg-rose-500/10"><i data-lucide="log-out" class="h-4 w-4"></i>Log out</button>
+    </div>
+  </div>
+
+  <!-- Search palette -->
+  <div id="search-overlay" class="fixed inset-0 z-[65] hidden p-4 sm:p-6">
+    <div class="absolute inset-0 bg-slate-950/60 backdrop-blur-sm" data-close-search></div>
+    <div class="modal-panel relative mx-auto mt-[7vh] w-full max-w-xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900">
+      <div class="flex items-center gap-3 border-b border-slate-100 px-4 dark:border-slate-800">
+        <i data-lucide="search" class="h-5 w-5 shrink-0 text-slate-400"></i>
+        <input id="search-input" class="h-14 w-full bg-transparent text-sm text-slate-900 outline-none placeholder:text-slate-400 dark:text-white" placeholder="Search files, folders and notes..." autocomplete="off">
+        <button data-close-search class="kbd shrink-0">Esc</button>
+      </div>
+      <div id="search-results" class="max-h-[52vh] overflow-y-auto p-2"></div>
+      <div class="flex items-center justify-between border-t border-slate-100 px-4 py-2.5 text-[11px] text-slate-500 dark:border-slate-800 dark:text-slate-400">
+        <span><i data-lucide="corner-down-left" class="mr-1 inline h-3 w-3"></i>Enter to open in My Files</span>
+        <span id="search-count">0 results</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal -->
+  <div id="modal-root" class="fixed inset-0 z-[70] hidden">
+    <div class="absolute inset-0 bg-slate-950/60 backdrop-blur-sm" data-modal-close></div>
+    <div class="relative flex min-h-full items-center justify-center p-4">
+      <div id="modal-panel" role="dialog" aria-modal="true" aria-label="Dialog"></div>
+    </div>
+  </div>
+
+  <!-- Lock screen -->
+  <div id="lock-screen" class="fixed inset-0 z-[75] hidden items-center justify-center bg-slate-950/80 p-4 backdrop-blur-md">
+    <div class="modal-panel w-full max-w-sm rounded-2xl border border-slate-800 bg-slate-900 p-7 text-center shadow-2xl">
+      <div class="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 text-white"><i data-lucide="lock" class="h-6 w-6"></i></div>
+      <h2 class="mt-4 text-xl font-bold text-white">You're logged out</h2>
+      <p class="mt-1 text-sm text-slate-400">Your demo vault is exactly where you left it.</p>
+      <button data-action="unlock" class="btn-primary mt-6 w-full">Sign back in</button>
+    </div>
+  </div>
+
+  <!-- Toasts -->
+  <div id="toast-container" class="pointer-events-none fixed bottom-4 right-4 z-[80] flex w-[min(92vw,22rem)] flex-col gap-2.5"></div>
+
+  <script src="app/core.js"></script>
+  <script src="app/views.js"></script>
+  <script src="app/views-modules.js"></script>
+  <script src="app/actions.js"></script>
+  <script src="app/upload.js"></script>
+  <script src="app/shared.js"></script>
+  <script src="app/settings.js"></script>
+</body>
+</html>
